@@ -114,32 +114,32 @@ class PolymarketClient:
     # ── Authenticated trading (live mode) ───────────────────────────────
     def place_market_order(self, token_id: str, side: str,
                            amount: float) -> dict:
-        """Place a market order via the CLOB client."""
+        """Place a market order (FOK) via the CLOB client."""
         self._init_clob_client()
-        from py_clob_client.clob_types import MarketOrderArgs
+        from py_clob_client.clob_types import MarketOrderArgs, OrderType
+        from py_clob_client.order_builder.constants import BUY, SELL
         order_args = MarketOrderArgs(
             token_id=token_id,
             amount=amount,
+            side=BUY if side.lower() == "buy" else SELL,
         )
-        if side.lower() == "buy":
-            return self._clob_client.create_and_post_market_order(order_args)
-        else:
-            return self._clob_client.create_and_post_market_order(order_args)
+        signed_order = self._clob_client.create_market_order(order_args)
+        return self._clob_client.post_order(signed_order, OrderType.FOK)
 
     def place_limit_order(self, token_id: str, side: str,
                           price: float, size: float) -> dict:
-        """Place a limit order via the CLOB client."""
+        """Place a limit order (GTC) via the CLOB client."""
         self._init_clob_client()
-        from py_clob_client.clob_types import OrderArgs
+        from py_clob_client.clob_types import OrderArgs, OrderType
         from py_clob_client.order_builder.constants import BUY, SELL
         order_args = OrderArgs(
             token_id=token_id,
             price=price,
             size=size,
+            side=BUY if side.lower() == "buy" else SELL,
         )
-        order_side = BUY if side.lower() == "buy" else SELL
-        signed_order = self._clob_client.create_order(order_args, order_side)
-        return self._clob_client.post_order(signed_order)
+        signed_order = self._clob_client.create_order(order_args)
+        return self._clob_client.post_order(signed_order, OrderType.GTC)
 
     def cancel_order(self, order_id: str) -> dict:
         """Cancel an existing order."""
