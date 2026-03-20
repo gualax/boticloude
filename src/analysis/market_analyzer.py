@@ -1,4 +1,5 @@
 """Analyzes Polymarket data to find trading opportunities."""
+import json
 import logging
 from dataclasses import dataclass
 from typing import Optional
@@ -39,6 +40,22 @@ class MarketAnalyzer:
     def __init__(self, client: PolymarketClient):
         self.client = client
 
+    @staticmethod
+    def _parse_json_field(value, default=None):
+        """Parse a field that may be a JSON string or already a list."""
+        if default is None:
+            default = []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return default
+
     def scan_markets(self, limit: int = 100) -> list[dict]:
         """Fetch and filter active markets suitable for trading."""
         markets = self.client.get_markets(limit=limit, active=True)
@@ -54,18 +71,22 @@ class MarketAnalyzer:
             if liquidity < 100:
                 continue
 
-            tokens = m.get("clobTokenIds", [])
+            # Gamma API returns clobTokenIds and outcomes as JSON strings
+            tokens = self._parse_json_field(
+                m.get("clobTokenIds", m.get("clob_token_ids", []))
+            )
             if not tokens or len(tokens) < 2:
-                # Try alternative field names
-                tokens = m.get("clob_token_ids", [])
-                if not tokens:
-                    continue
+                continue
+
+            outcomes = self._parse_json_field(
+                m.get("outcomes", ""), ["Yes", "No"]
+            )
 
             suitable.append({
                 "condition_id": m.get("conditionId", m.get("condition_id", "")),
                 "question": m.get("question", "Unknown"),
                 "tokens": tokens,
-                "outcomes": m.get("outcomes", ["Yes", "No"]),
+                "outcomes": outcomes,
                 "volume": volume,
                 "liquidity": liquidity,
                 "end_date": m.get("endDate", m.get("end_date_iso", "")),

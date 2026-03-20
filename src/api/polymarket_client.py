@@ -79,7 +79,8 @@ class PolymarketClient:
             resp = self._get(f"{self.clob_url}/midpoint",
                              params={"token_id": token_id})
             return float(resp.get("mid", 0))
-        except Exception:
+        except Exception as e:
+            logger.debug("get_midpoint failed for %s: %s", token_id[:20], e)
             return None
 
     def get_price(self, token_id: str, side: str = "buy") -> Optional[float]:
