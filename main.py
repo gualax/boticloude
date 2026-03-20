@@ -4,6 +4,8 @@ Polymarket Trading Bot — Entry point.
 
 Usage:
     python main.py                    # Run bot continuously (paper trading)
+    python main.py web                # Launch web dashboard on port 8080
+    python main.py web --port 3000    # Launch on custom port
     python main.py --cycles 5         # Run 5 cycles then stop
     python main.py --scan             # Scan markets and show opportunities
     python main.py --status           # Show current portfolio status
@@ -62,6 +64,14 @@ def cmd_status(args):
     print_dashboard(paper, cycle=0)
 
 
+def cmd_web(args):
+    """Launch the web dashboard."""
+    from src.web import start_web
+    print(f"Starting web dashboard on http://0.0.0.0:{args.port}")
+    print("Bot will auto-start in the background.\n")
+    start_web(port=args.port, auto_start_bot=True)
+
+
 def cmd_reset(args):
     """Reset the paper trading state."""
     path = os.path.join("data", "paper_state.json")
@@ -90,6 +100,11 @@ def main():
     scan_parser.add_argument("--limit", type=int, default=100,
                              help="Number of markets to scan")
 
+    # Web dashboard
+    web_parser = sub.add_parser("web", help="Launch web dashboard")
+    web_parser.add_argument("--port", type=int, default=8080,
+                            help="Port for the web server (default: 8080)")
+
     # Status
     sub.add_parser("status", help="Show portfolio status")
 
@@ -104,6 +119,8 @@ def main():
 
     if args.command == "run" or args.command is None:
         cmd_run(args)
+    elif args.command == "web":
+        cmd_web(args)
     elif args.command == "scan":
         cmd_scan(args)
     elif args.command == "status":

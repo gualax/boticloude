@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Polymarket Bot — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="header-left">
+      <h1>Polymarket Bot</h1>
+      <span id="mode-badge" class="badge badge-paper">PAPER</span>
+      <span id="status-badge" class="badge badge-off">OFF</span>
+    </div>
+    <div class="header-right">
+      <span id="cycle-counter">Ciclo #0</span>
+      <button id="btn-start" class="btn btn-green" onclick="startBot()">Iniciar</button>
+      <button id="btn-stop" class="btn btn-red" onclick="stopBot()">Detener</button>
+    </div>
+  </header>
+
+  <!-- KPI Cards -->
+  <section class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-label">Portfolio</div>
+      <div class="kpi-value" id="kpi-portfolio">$0.00</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Balance</div>
+      <div class="kpi-value" id="kpi-balance">$0.00</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">PnL No Realizado</div>
+      <div class="kpi-value" id="kpi-unrealized">$0.00</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">PnL Realizado</div>
+      <div class="kpi-value" id="kpi-realized">$0.00</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Retorno Total</div>
+      <div class="kpi-value" id="kpi-return">0.00%</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Trades Totales</div>
+      <div class="kpi-value" id="kpi-trades">0</div>
+    </div>
+  </section>
+
+  <!-- Charts -->
+  <section class="charts-row">
+    <div class="chart-container">
+      <h3>Valor del Portfolio</h3>
+      <canvas id="chart-portfolio"></canvas>
+    </div>
+    <div class="chart-container">
+      <h3>PnL por Ciclo</h3>
+      <canvas id="chart-pnl"></canvas>
+    </div>
+  </section>
+
+  <!-- Positions + Signals -->
+  <section class="tables-row">
+    <div class="table-container">
+      <h3>Posiciones Abiertas <span id="pos-count" class="count-badge">0</span></h3>
+      <table id="tbl-positions">
+        <thead>
+          <tr>
+            <th>Mercado</th>
+            <th>Lado</th>
+            <th>Entrada</th>
+            <th>Actual</th>
+            <th>Cantidad</th>
+            <th>PnL</th>
+            <th>PnL %</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty-msg" id="pos-empty">Sin posiciones abiertas</p>
+    </div>
+
+    <div class="table-container">
+      <h3>Senales Detectadas <span id="sig-count" class="count-badge">0</span></h3>
+      <table id="tbl-signals">
+        <thead>
+          <tr>
+            <th>Mercado</th>
+            <th>Lado</th>
+            <th>Precio</th>
+            <th>Fair Value</th>
+            <th>Edge</th>
+            <th>Confianza</th>
+            <th>Estrategia</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty-msg" id="sig-empty">Esperando senales...</p>
+    </div>
+  </section>
+
+  <!-- Trade History -->
+  <section class="full-width-section">
+    <div class="table-container">
+      <h3>Historial de Trades <span id="trade-count" class="count-badge">0</span></h3>
+      <table id="tbl-trades">
+        <thead>
+          <tr>
+            <th>Hora</th>
+            <th>Mercado</th>
+            <th>Accion</th>
+            <th>Lado</th>
+            <th>Precio</th>
+            <th>Cantidad</th>
+            <th>Costo</th>
+            <th>PnL</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty-msg" id="trade-empty">Sin trades todavia</p>
+    </div>
+  </section>
+
+  <!-- Logs -->
+  <section class="full-width-section">
+    <div class="log-container">
+      <h3>Log del Bot</h3>
+      <div id="log-output"></div>
+    </div>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
