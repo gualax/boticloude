@@ -13,6 +13,8 @@ class RiskManager:
 
     def __init__(self, config: Optional[Config] = None):
         self.config = config or Config()
+        # Track peak prices for trailing stop-loss
+        self.peak_prices: dict[str, float] = {}
 
     def size_position(self, signal: MarketSignal, balance: float,
                       open_positions: int) -> float:
@@ -23,8 +25,7 @@ class RiskManager:
             return 0
 
         # Kelly criterion: f* = (bp - q) / b
-        # b = odds, p = probability of win, q = 1-p
-        if signal.current_price <= 0 or signal.current_price >= 1:
+        if signal.current_price <= 0.02 or signal.current_price >= 0.98:
             return 0
 
         b = (1.0 / signal.current_price) - 1  # Odds
@@ -36,8 +37,8 @@ class RiskManager:
 
         kelly = (b * p - q) / b
 
-        # Use fractional Kelly (25%) for safety
-        kelly = max(0, kelly * 0.25)
+        # Use fractional Kelly for safety
+        kelly = max(0, kelly * self.config.KELLY_FRACTION)
 
         # Apply confidence scaling
         kelly *= signal.confidence
@@ -60,26 +61,59 @@ class RiskManager:
                      signal.market_name[:40], kelly, position_usd, shares)
         return round(shares, 1)
 
-    def check_portfolio_stop_loss(self, portfolio_value: float,
-                                  initial_balance: float) -> bool:
-        """Check if portfolio-level stop-loss has been triggered."""
-        if initial_balance == 0:
-            return False
-        loss_pct = (initial_balance - portfolio_value) / initial_balance
-        if loss_pct >= self.config.STOP_LOSS_PCT:
-            logger.warning("STOP LOSS triggered: portfolio down %.1f%%",
-                           loss_pct * 100)
-            return True
-        return False
-
     def check_position_stop_loss(self, entry_price: float,
                                  current_price: float) -> bool:
-        """Check if an individual position should be stopped out."""
+        """Check if an individual position should be stopped out (15% loss)."""
         if entry_price == 0:
             return False
         loss_pct = (entry_price - current_price) / entry_price
-        # Stop out if position loses more than 30% of its value
-        return loss_pct >= 0.30
+        return loss_pct >= self.config.STOP_LOSS_PCT
+
+    def check_take_profit(self, entry_price: float,
+                          current_price: float) -> bool:
+        """Check if a position has hit take-profit target."""
+        if entry_price == 0:
+            return False
+        gain_pct = (current_price - entry_price) / entry_price
+        return gain_pct >= self.config.TAKE_PROFIT_PCT
+
+    def update_trailing_stop(self, token_id: str, current_price: float):
+        """Update the peak price for trailing stop tracking."""
+        if token_id not in self.peak_prices:
+            self.peak_prices[token_id] = current_price
+        elif current_price > self.peak_prices[token_id]:
+            self.peak_prices[token_id] = current_price
+
+    def check_trailing_stop(self, token_id: str, entry_price: float,
+                            current_price: float) -> bool:
+        """Check if trailing stop-loss is triggered.
+
+        Only activates after position gains TRAILING_STOP_ACTIVATION from entry.
+        Then triggers if price drops TRAILING_STOP_DISTANCE from peak.
+        """
+        if entry_price == 0:
+            return False
+
+        gain_from_entry = (current_price - entry_price) / entry_price
+        # Only activate trailing stop after sufficient gain
+        if gain_from_entry < self.config.TRAILING_STOP_ACTIVATION:
+            return False
+
+        peak = self.peak_prices.get(token_id, current_price)
+        if peak == 0:
+            return False
+
+        drop_from_peak = (peak - current_price) / peak
+        if drop_from_peak >= self.config.TRAILING_STOP_DISTANCE:
+            logger.info("Trailing stop triggered for %s: peak=$%.4f, "
+                        "current=$%.4f, drop=%.1f%%",
+                        token_id[:16], peak, current_price, drop_from_peak * 100)
+            return True
+        return False
+
+    def clear_trailing_data(self, token_id: str):
+        """Remove trailing stop data when position is closed."""
+        self.peak_prices.pop(token_id, None)
 
     def validate_signal(self, signal: MarketSignal) -> bool:
         """Validate that a signal meets minimum quality criteria."""
@@ -90,7 +124,6 @@ class RiskManager:
         if signal.confidence < 0.1:
             return False
         if signal.current_price <= 0.02 or signal.current_price >= 0.98:
-            # Avoid extreme prices (low edge, high slippage)
             return False
         return True
 

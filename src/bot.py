@@ -18,9 +18,12 @@ class PolymarketBot:
     def __init__(self, config: Optional[Config] = None):
         self.config = config or Config()
         self.client = PolymarketClient(self.config)
-        self.analyzer = MarketAnalyzer(self.client)
+        self.analyzer = MarketAnalyzer(self.client, self.config)
         self.risk = RiskManager(self.config)
-        self.paper = PaperTrader(self.config.INITIAL_BALANCE)
+        self.paper = PaperTrader(
+            self.config.INITIAL_BALANCE,
+            slippage_bps=self.config.SLIPPAGE_BPS,
+        )
         self.is_running = False
         self.cycle_count = 0
 
@@ -38,29 +41,33 @@ class PolymarketBot:
             "errors": [],
         }
 
-        # Step 1: Update existing position prices
+        # Step 1: Update existing position prices & trailing stops
         self._update_positions()
 
-        # Step 2: Check portfolio stop-loss
-        if self.risk.check_portfolio_stop_loss(
-                self.paper.portfolio_value, self.paper.initial_balance):
-            logger.warning("Portfolio stop-loss triggered! Closing all positions.")
-            self._close_all_positions()
-            result["positions_closed"] = len(self.paper.positions)
-            return result
-
-        # Step 3: Check individual position stop-losses
+        # Step 2: Check exits — stop-loss, take-profit, trailing stop
         positions_to_close = []
         for token_id, pos in self.paper.positions.items():
-            if self.risk.check_position_stop_loss(pos.entry_price, pos.current_price):
-                positions_to_close.append(token_id)
+            close_reason = None
 
-        for token_id in positions_to_close:
-            logger.info("Stop-loss triggered for position %s", token_id[:16])
+            if self.risk.check_position_stop_loss(pos.entry_price, pos.current_price):
+                close_reason = "stop-loss"
+            elif self.risk.check_take_profit(pos.entry_price, pos.current_price):
+                close_reason = "take-profit"
+            elif self.risk.check_trailing_stop(token_id, pos.entry_price,
+                                               pos.current_price):
+                close_reason = "trailing-stop"
+
+            if close_reason:
+                positions_to_close.append((token_id, close_reason))
+
+        for token_id, reason in positions_to_close:
+            logger.info("%s triggered for %s", reason.upper(),
+                        self.paper.positions[token_id].market_name[:50])
             self.paper.sell(token_id)
+            self.risk.clear_trailing_data(token_id)
             result["positions_closed"] += 1
 
-        # Step 4: Scan for new opportunities
+        # Step 3: Scan for new opportunities
         try:
             markets = self.analyzer.scan_markets(limit=100)
             signals = self.analyzer.generate_signals(markets)
@@ -70,7 +77,7 @@ class PolymarketBot:
             result["errors"].append(str(e))
             return result
 
-        # Step 5: Execute trades on valid signals
+        # Step 4: Execute trades on valid signals
         for signal in signals:
             if not self.risk.validate_signal(signal):
                 continue
@@ -173,21 +180,16 @@ class PolymarketBot:
             self._print_final_report()
 
     def _update_positions(self):
-        """Update current prices for all open positions."""
+        """Update current prices for all open positions and trailing stops."""
         for token_id, pos in self.paper.positions.items():
             try:
                 mid = self.client.get_midpoint(token_id)
                 if mid is not None:
                     self.paper.update_position_price(token_id, mid)
+                    self.risk.update_trailing_stop(token_id, mid)
             except Exception as e:
                 logger.warning("Failed to update price for %s: %s",
                                token_id[:16], e)
-
-    def _close_all_positions(self):
-        """Close all open positions (emergency stop)."""
-        token_ids = list(self.paper.positions.keys())
-        for token_id in token_ids:
-            self.paper.sell(token_id)
 
     def _print_final_report(self):
         """Print a final performance report."""

@@ -6,6 +6,7 @@ from typing import Optional
 
 import numpy as np
 
+from config import Config
 from src.api.polymarket_client import PolymarketClient
 
 logger = logging.getLogger(__name__)
@@ -37,8 +38,9 @@ class MarketSignal:
 class MarketAnalyzer:
     """Scans markets and generates trading signals."""
 
-    def __init__(self, client: PolymarketClient):
+    def __init__(self, client: PolymarketClient, config: Optional[Config] = None):
         self.client = client
+        self.config = config or Config()
 
     @staticmethod
     def _parse_json_field(value, default=None):
@@ -164,15 +166,18 @@ class MarketAnalyzer:
         no_price = no_data["midpoint"]
         total = yes_price + no_price
 
+        threshold = self.config.MISPRICING_THRESHOLD
+        min_edge = self.config.MISPRICING_MIN_EDGE
+
         # If prices don't sum to ~1.0, there's an arbitrage opportunity
-        if total > 0 and abs(total - 1.0) > 0.02:
+        if total > 0 and abs(total - 1.0) > threshold:
             # Overpriced total → sell the overpriced side
-            if total > 1.02:
+            if total > 1.0 + threshold:
                 # Both sides overpriced, but relatively the higher one more so
                 if yes_price > no_price:
                     fair = 1.0 - no_price
                     edge = yes_price - fair
-                    if edge > 0.02:
+                    if edge > min_edge:
                         signals.append(MarketSignal(
                             token_id=no_data["token_id"],
                             market_name=market["question"],
@@ -186,7 +191,7 @@ class MarketAnalyzer:
                             volume_24h=market.get("volume", 0),
                             liquidity=market.get("liquidity", 0),
                         ))
-            elif total < 0.98:
+            elif total < 1.0 - threshold:
                 # Underpriced — buy the cheaper side
                 cheaper = "YES" if yes_price < no_price else "NO"
                 data = yes_data if cheaper == "YES" else no_data
@@ -194,7 +199,7 @@ class MarketAnalyzer:
                 fair = 1.0 - (no_price if cheaper == "YES" else yes_price)
                 edge = fair - price
 
-                if edge > 0.02:
+                if edge > min_edge:
                     signals.append(MarketSignal(
                         token_id=data["token_id"],
                         market_name=market["question"],
@@ -241,9 +246,10 @@ class MarketAnalyzer:
 
                 # Mean reversion: if price deviates significantly from mean
                 deviation = (current - mean) / max(volatility, 0.01)
-                if deviation < -1.5 and current < 0.85:
+                if (deviation < self.config.MEAN_REVERSION_DEVIATION
+                        and current < self.config.MEAN_REVERSION_MAX_PRICE):
                     edge = mean - current
-                    if edge > 0.03:
+                    if edge > self.config.MIN_EDGE:
                         all_signals.append(MarketSignal(
                             token_id=token_id,
                             market_name=market["question"],
@@ -259,10 +265,12 @@ class MarketAnalyzer:
                         ))
 
                 # Momentum: strong positive trend
-                if momentum > 0.05 and analysis["trend"] > 0 and current < 0.80:
+                if (momentum > self.config.MOMENTUM_THRESHOLD
+                        and analysis["trend"] > 0
+                        and current < self.config.MOMENTUM_MAX_PRICE):
                     fair_value = min(current + momentum * 0.5, 0.95)
                     edge = fair_value - current
-                    if edge > 0.03:
+                    if edge > self.config.MIN_EDGE:
                         all_signals.append(MarketSignal(
                             token_id=token_id,
                             market_name=market["question"],

@@ -49,18 +49,27 @@ class Trade:
 class PaperTrader:
     """Simulates trading with virtual money against live Polymarket prices."""
 
-    def __init__(self, initial_balance: float = 1000.0):
+    def __init__(self, initial_balance: float = 1000.0, slippage_bps: int = 50):
         self.initial_balance = initial_balance
         self.balance = initial_balance
         self.positions: dict[str, Position] = {}  # token_id -> Position
         self.trade_history: list[Trade] = []
         self.total_pnl = 0.0
+        self.slippage_bps = slippage_bps  # basis points of simulated slippage
         self._load_state()
 
     # ── Trading operations ──────────────────────────────────────────────
+    def _apply_slippage(self, price: float, is_buy: bool) -> float:
+        """Apply simulated slippage to a trade price."""
+        slippage = price * (self.slippage_bps / 10000)
+        if is_buy:
+            return min(price + slippage, 0.99)  # Buy at worse (higher) price
+        return max(price - slippage, 0.01)      # Sell at worse (lower) price
+
     def buy(self, token_id: str, market_name: str, side: str,
             price: float, size: float) -> Optional[Trade]:
         """Buy shares of a market outcome."""
+        price = self._apply_slippage(price, is_buy=True)
         cost = price * size
         if cost > self.balance:
             logger.warning("Insufficient balance: need $%.2f, have $%.2f",
@@ -110,7 +119,8 @@ class PaperTrader:
 
         pos = self.positions[token_id]
         sell_size = size if size and size <= pos.size else pos.size
-        revenue = pos.current_price * sell_size
+        sell_price = self._apply_slippage(pos.current_price, is_buy=False)
+        revenue = sell_price * sell_size
         cost_basis = pos.entry_price * sell_size
         pnl = revenue - cost_basis
 
@@ -122,7 +132,7 @@ class PaperTrader:
             market_name=pos.market_name,
             side=pos.side,
             action="sell",
-            price=pos.current_price,
+            price=sell_price,
             size=sell_size,
             cost=revenue,
             pnl=pnl,
@@ -137,7 +147,7 @@ class PaperTrader:
 
         self._save_state()
         logger.info("PAPER SELL: %s @ $%.4f x %.1f | PnL: $%.2f",
-                     pos.market_name, pos.current_price, sell_size, pnl)
+                     pos.market_name, sell_price, sell_size, pnl)
         return trade
 
     def update_position_price(self, token_id: str, current_price: float):

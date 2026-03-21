@@ -11,8 +11,8 @@ from src.api.paper_trader import PaperTrader
 
 @pytest.fixture
 def trader():
-    """Create a fresh paper trader for each test."""
-    t = PaperTrader(initial_balance=1000.0)
+    """Create a fresh paper trader for each test (no slippage for determinism)."""
+    t = PaperTrader(initial_balance=1000.0, slippage_bps=0)
     # Clear any loaded state
     t.balance = 1000.0
     t.positions = {}
