@@ -222,15 +222,13 @@ tbody tr:hover { background: rgba(255,255,255,0.03); }
 .log-err  { color: var(--red); }
 .log-info { color: var(--text); }
 
-/* ── Version Footer ─────────────────────────────────────── */
-.version-footer {
-  position: fixed;
-  bottom: 8px;
-  right: 16px;
-  font-size: 0.7rem;
+/* ── Header Version ─────────────────────────────────────── */
+.header-version {
+  font-size: 0.55em;
+  font-weight: 400;
   color: var(--dim);
-  opacity: 0.6;
-  z-index: 10;
+  vertical-align: middle;
+  margin-left: 4px;
 }
 
 /* ── Responsive ──────────────────────────────────────────── */
