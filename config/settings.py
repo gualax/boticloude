@@ -6,6 +6,8 @@ load_dotenv()
 
 
 class Config:
+    VERSION = "2.0.0"
+
     # API
     CLOB_API_URL = os.getenv("CLOB_API_URL", "https://clob.polymarket.com")
     GAMMA_API_URL = os.getenv("GAMMA_API_URL", "https://gamma-api.polymarket.com")

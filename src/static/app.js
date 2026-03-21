@@ -98,6 +98,11 @@ async function updateSummary() {
   document.getElementById("kpi-trades").textContent = d.total_trades;
   document.getElementById("cycle-counter").textContent = "Ciclo #" + d.cycle;
 
+  // Version
+  if (d.version) {
+    document.getElementById("bot-version").textContent = "v" + d.version;
+  }
+
   // Status badge
   const sb = document.getElementById("status-badge");
   if (d.is_running) { sb.textContent = "ON"; sb.className = "badge badge-on"; }

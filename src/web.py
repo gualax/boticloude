@@ -150,6 +150,7 @@ def api_summary():
     summary["is_running"] = _bot.is_running
     summary["mode"] = "PAPER" if _bot.config.PAPER_TRADING else "LIVE"
     summary["initial_balance"] = _bot.paper.initial_balance
+    summary["version"] = _bot.config.VERSION
     return jsonify(summary)
 
 
