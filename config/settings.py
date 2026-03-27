@@ -6,7 +6,7 @@ load_dotenv()
 
 
 class Config:
-    VERSION = "2.0.0"
+    VERSION = "2.1.0"
 
     # API
     CLOB_API_URL = os.getenv("CLOB_API_URL", "https://clob.polymarket.com")
@@ -48,3 +48,7 @@ class Config:
     MEAN_REVERSION_MAX_PRICE = 0.85   # Max price for mean reversion
     MOMENTUM_THRESHOLD = 0.05         # Min momentum for signal
     MOMENTUM_MAX_PRICE = 0.80         # Max price for momentum signal
+
+    # Gemini AI daily analysis
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    ANALYSIS_HOUR = int(os.getenv("ANALYSIS_HOUR", "23"))  # Run at 23:00 daily

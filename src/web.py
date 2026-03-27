@@ -206,6 +206,41 @@ def api_bot_stop():
     return jsonify({"status": "stopped"})
 
 
+# ── Routes: Daily Analysis ───────────────────────────────────────────────
+
+@app.route("/api/analysis/latest")
+def api_analysis_latest():
+    if not _bot:
+        return jsonify({"error": "Bot not running"}), 503
+    report = _bot.daily_analyzer.get_latest_report()
+    if not report:
+        return jsonify({"error": "No analysis yet"}), 404
+    return jsonify(report)
+
+
+@app.route("/api/analysis/history")
+def api_analysis_history():
+    if not _bot:
+        return jsonify([])
+    return jsonify(_bot.daily_analyzer.get_all_reports())
+
+
+@app.route("/api/analysis/run", methods=["POST"])
+def api_analysis_run():
+    """Manually trigger a daily analysis."""
+    if not _bot:
+        return jsonify({"error": "Bot not running"}), 503
+    if not _bot.config.GEMINI_API_KEY:
+        return jsonify({"error": "GEMINI_API_KEY not configured"}), 400
+    try:
+        report = _bot.daily_analyzer.run_analysis(_bot)
+        if report:
+            return jsonify({"status": "ok", "date": report["date"]})
+        return jsonify({"error": "Analysis failed"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entry point ──────────────────────────────────────────────────────────
 
 def start_web(host: str = "0.0.0.0", port: int = 8080, auto_start_bot: bool = True):

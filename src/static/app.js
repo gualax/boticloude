@@ -246,6 +246,56 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+// ── AI Analysis ──────────────────────────────────────────────────────
+
+function markdownToHtml(md) {
+  // Simple markdown → HTML for the analysis display
+  return md
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+    .replace(/<\/ul>\s*<ul>/g, '')
+    .replace(/\n{2,}/g, '<br><br>')
+    .replace(/\n/g, '<br>');
+}
+
+let _analysisLoaded = false;
+
+async function updateAnalysis() {
+  const data = await fetchJSON("/api/analysis/latest");
+  if (!data || data.error) return;
+
+  _analysisLoaded = true;
+  const dateEl = document.getElementById("analysis-date");
+  dateEl.textContent = data.date;
+
+  const output = document.getElementById("analysis-output");
+  output.innerHTML = markdownToHtml(data.analysis);
+}
+
+async function runAnalysis() {
+  const btn = document.getElementById("btn-run-analysis");
+  btn.textContent = "Analizando...";
+  btn.disabled = true;
+  try {
+    const resp = await fetch("/api/analysis/run", { method: "POST" });
+    const data = await resp.json();
+    if (data.error) {
+      alert("Error: " + data.error);
+    } else {
+      await updateAnalysis();
+    }
+  } catch (e) {
+    alert("Error de conexion");
+  } finally {
+    btn.textContent = "Ejecutar Ahora";
+    btn.disabled = false;
+  }
+}
+
 // ── Bot controls ────────────────────────────────────────────────────
 
 async function startBot() {
@@ -267,6 +317,8 @@ async function refresh() {
     updateCharts(),
     updateLogs(),
   ]);
+  // Load analysis only once (it updates daily, no need to poll)
+  if (!_analysisLoaded) updateAnalysis();
 }
 
 // Initial load + polling

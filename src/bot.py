@@ -8,6 +8,7 @@ from src.api.polymarket_client import PolymarketClient
 from src.api.paper_trader import PaperTrader
 from src.analysis.market_analyzer import MarketAnalyzer, MarketSignal
 from src.risk.risk_manager import RiskManager
+from src.analysis.daily_report import DailyAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class PolymarketBot:
             self.config.INITIAL_BALANCE,
             slippage_bps=self.config.SLIPPAGE_BPS,
         )
+        self.daily_analyzer = DailyAnalyzer(self.config)
         self.is_running = False
         self.cycle_count = 0
 
@@ -149,6 +151,13 @@ class PolymarketBot:
             summary["open_positions"],
             result["trades_executed"],
         )
+
+        # Step 6: Daily AI self-analysis (runs once per day)
+        if self.daily_analyzer.should_run():
+            try:
+                self.daily_analyzer.run_analysis(self)
+            except Exception as e:
+                logger.error("Daily analysis failed: %s", e)
 
         return result
 
