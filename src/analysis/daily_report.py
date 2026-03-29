@@ -1,11 +1,12 @@
 """Daily self-analysis agent powered by Google Gemini.
 
 At the end of each day (configurable hour), collects all trading data,
-sends it to Gemini for analysis, and stores actionable recommendations.
+sends it to Gemini for analysis, and auto-applies safe parameter adjustments.
 """
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, date
 from typing import Optional
@@ -44,7 +45,22 @@ Which strategies underperformed, losing trades, missed opportunities.
 ## Puntuacion
 Rate today's performance 1-10 with brief justification.
 
-Be specific with numbers. Do not be generic. Reference actual trades and markets.\
+## Auto-Ajustes
+IMPORTANT: Output a JSON code block with parameter changes you recommend.
+Only include parameters you want to change. Use EXACTLY this format:
+
+```json
+{"parameter_changes": [
+  {"param": "PARAM_NAME", "old": current_value, "new": recommended_value, "reason": "brief reason"}
+]}
+```
+
+Available parameters you can adjust:
+{tunable_params}
+
+Be conservative — only adjust parameters where data clearly supports it. \
+Small incremental changes only (max 20-30% change from current value). \
+Be specific with numbers. Reference actual trades and markets.\
 """
 
 
@@ -79,18 +95,15 @@ class DailyAnalyzer:
         now = datetime.now()
         today = now.strftime("%Y-%m-%d")
 
-        # Already ran today
         if self._last_analysis_date == today:
             return False
 
-        # Run at configured hour
         return now.hour >= self.config.ANALYSIS_HOUR
 
     def collect_daily_data(self, bot) -> dict:
         """Collect all trading data for analysis."""
         summary = bot.paper.get_summary()
 
-        # Trades from today
         today_start = datetime.combine(date.today(), datetime.min.time()).timestamp()
         today_trades = [
             {
@@ -107,7 +120,6 @@ class DailyAnalyzer:
             if t.timestamp >= today_start
         ]
 
-        # Current positions
         positions = [
             {
                 "market": p.market_name,
@@ -121,7 +133,6 @@ class DailyAnalyzer:
             for p in bot.paper.positions.values()
         ]
 
-        # Current config parameters
         config_snapshot = {
             "MIN_EDGE": self.config.MIN_EDGE,
             "MIN_LIQUIDITY": self.config.MIN_LIQUIDITY,
@@ -137,6 +148,10 @@ class DailyAnalyzer:
             "MISPRICING_THRESHOLD": self.config.MISPRICING_THRESHOLD,
             "MEAN_REVERSION_DEVIATION": self.config.MEAN_REVERSION_DEVIATION,
             "MOMENTUM_THRESHOLD": self.config.MOMENTUM_THRESHOLD,
+            "MIN_PRICE": self.config.MIN_PRICE,
+            "MAX_PRICE": self.config.MAX_PRICE,
+            "LOSS_COOLDOWN_CYCLES": self.config.LOSS_COOLDOWN_CYCLES,
+            "MAX_EXPOSURE_PER_MARKET": self.config.MAX_EXPOSURE_PER_MARKET,
         }
 
         return {
@@ -148,8 +163,86 @@ class DailyAnalyzer:
             "config": config_snapshot,
         }
 
+    def _build_tunable_description(self) -> str:
+        """Build a description of tunable params with their current values and limits."""
+        lines = []
+        for param, limits in self.config.TUNABLE_PARAMS.items():
+            current = getattr(self.config, param, "?")
+            lines.append(
+                f"- {param}: current={current}, min={limits['min']}, max={limits['max']}"
+            )
+        return "\n".join(lines)
+
+    def _extract_parameter_changes(self, analysis_text: str) -> list[dict]:
+        """Extract parameter changes from Gemini's JSON block."""
+        # Find JSON code block
+        pattern = r'```json\s*(\{.*?"parameter_changes".*?\})\s*```'
+        match = re.search(pattern, analysis_text, re.DOTALL)
+        if not match:
+            return []
+
+        try:
+            data = json.loads(match.group(1))
+            return data.get("parameter_changes", [])
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning("Failed to parse Gemini parameter changes: %s", e)
+            return []
+
+    def _apply_parameter_changes(self, changes: list[dict]) -> list[dict]:
+        """Validate and apply parameter changes within safety limits.
+
+        Returns list of actually applied changes.
+        """
+        applied = []
+        tunable = self.config.TUNABLE_PARAMS
+
+        for change in changes:
+            param = change.get("param", "")
+            new_val = change.get("new")
+            reason = change.get("reason", "")
+
+            # Must be a known tunable parameter
+            if param not in tunable:
+                logger.warning("Gemini suggested unknown param '%s', skipping", param)
+                continue
+
+            limits = tunable[param]
+            old_val = getattr(self.config, param, None)
+            if old_val is None:
+                continue
+
+            # Cast to correct type
+            try:
+                new_val = limits["type"](new_val)
+            except (ValueError, TypeError):
+                logger.warning("Invalid value for %s: %s", param, new_val)
+                continue
+
+            # Enforce safety bounds
+            clamped = max(limits["min"], min(limits["max"], new_val))
+            if clamped != new_val:
+                logger.info("Clamped %s from %s to %s (safety limits)",
+                            param, new_val, clamped)
+                new_val = clamped
+
+            # Skip if no meaningful change
+            if abs(new_val - old_val) < 1e-6:
+                continue
+
+            # Apply the change
+            setattr(self.config, param, new_val)
+            applied.append({
+                "param": param,
+                "old": old_val,
+                "new": new_val,
+                "reason": reason,
+            })
+            logger.info("AUTO-TUNED %s: %s → %s (%s)", param, old_val, new_val, reason)
+
+        return applied
+
     def run_analysis(self, bot) -> Optional[dict]:
-        """Run the daily Gemini analysis."""
+        """Run the daily Gemini analysis and auto-apply recommendations."""
         logger.info("Starting daily AI analysis...")
 
         data = self.collect_daily_data(bot)
@@ -157,6 +250,11 @@ class DailyAnalyzer:
         model = self._get_gemini_model()
         if not model:
             return None
+
+        # Build prompt with tunable params description
+        system = SYSTEM_PROMPT.replace(
+            "{tunable_params}", self._build_tunable_description()
+        )
 
         prompt = (
             f"Here is today's trading bot data:\n\n"
@@ -166,12 +264,16 @@ class DailyAnalyzer:
 
         try:
             response = model.generate_content(
-                [{"role": "user", "parts": [{"text": SYSTEM_PROMPT + "\n\n" + prompt}]}],
+                [{"role": "user", "parts": [{"text": system + "\n\n" + prompt}]}],
             )
             analysis_text = response.text
         except Exception as e:
             logger.error("Gemini API call failed: %s", e)
             return None
+
+        # Extract and apply parameter changes
+        changes = self._extract_parameter_changes(analysis_text)
+        applied = self._apply_parameter_changes(changes) if changes else []
 
         report = {
             "date": data["date"],
@@ -180,13 +282,18 @@ class DailyAnalyzer:
             "summary_snapshot": data["summary"],
             "trades_count": len(data["trades_today"]),
             "analysis": analysis_text,
+            "applied_changes": applied,
         }
 
         self._latest_report = report
         self._last_analysis_date = data["date"]
         self._save_report(report)
 
-        logger.info("Daily AI analysis complete for %s", data["date"])
+        if applied:
+            logger.info("Daily analysis applied %d parameter changes", len(applied))
+        else:
+            logger.info("Daily analysis complete — no parameter changes applied")
+
         return report
 
     def get_latest_report(self) -> Optional[dict]:
@@ -194,7 +301,7 @@ class DailyAnalyzer:
         return self._latest_report
 
     def get_all_reports(self) -> list[dict]:
-        """Return list of all saved report summaries (without full text)."""
+        """Return list of all saved report summaries."""
         os.makedirs(REPORTS_DIR, exist_ok=True)
         reports = []
         for fname in sorted(os.listdir(REPORTS_DIR), reverse=True):
@@ -209,10 +316,11 @@ class DailyAnalyzer:
                     "trades_count": report.get("trades_count", 0),
                     "portfolio_value": report.get("summary_snapshot", {}).get(
                         "portfolio_value", 0),
+                    "changes_applied": len(report.get("applied_changes", [])),
                 })
             except Exception:
                 continue
-        return reports[:30]  # Last 30 days
+        return reports[:30]
 
     def _save_report(self, report: dict):
         """Persist report to disk."""

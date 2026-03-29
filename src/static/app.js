@@ -273,7 +273,18 @@ async function updateAnalysis() {
   dateEl.textContent = data.date;
 
   const output = document.getElementById("analysis-output");
-  output.innerHTML = markdownToHtml(data.analysis);
+  let html = markdownToHtml(data.analysis);
+
+  // Show applied changes if any
+  if (data.applied_changes && data.applied_changes.length > 0) {
+    html += '<h2>Cambios Auto-Aplicados</h2><ul>';
+    for (const c of data.applied_changes) {
+      html += `<li><strong>${c.param}</strong>: ${c.old} → ${c.new} — ${c.reason}</li>`;
+    }
+    html += '</ul>';
+  }
+
+  output.innerHTML = html;
 }
 
 async function runAnalysis() {

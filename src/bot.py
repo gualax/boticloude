@@ -32,6 +32,7 @@ class PolymarketBot:
     def run_cycle(self) -> dict:
         """Execute one full trading cycle: scan → analyze → trade → manage risk."""
         self.cycle_count += 1
+        self.risk.set_cycle(self.cycle_count)
         logger.info("═" * 60)
         logger.info("Starting trading cycle #%d", self.cycle_count)
 
@@ -63,8 +64,12 @@ class PolymarketBot:
                 positions_to_close.append((token_id, close_reason))
 
         for token_id, reason in positions_to_close:
+            pos = self.paper.positions[token_id]
             logger.info("%s triggered for %s", reason.upper(),
-                        self.paper.positions[token_id].market_name[:50])
+                        pos.market_name[:50])
+            # Add cooldown if closing at a loss
+            if reason == "stop-loss" and pos.current_price < pos.entry_price:
+                self.risk.add_cooldown(pos.market_name)
             self.paper.sell(token_id)
             self.risk.clear_trailing_data(token_id)
             result["positions_closed"] += 1
@@ -84,11 +89,25 @@ class PolymarketBot:
             if not self.risk.validate_signal(signal):
                 continue
 
-            # Skip if we already have a position in this market
+            # Skip if we already have a position in this token
             if signal.token_id in self.paper.positions:
                 continue
 
-            # Check exposure limits
+            # Skip if market is on cooldown after a loss
+            if self.risk.is_on_cooldown(signal.market_name):
+                continue
+
+            # Check per-market exposure limit
+            market_exposure = self.risk.check_market_exposure(
+                signal.market_name, self.paper.positions,
+            )
+            if market_exposure >= self.config.MAX_EXPOSURE_PER_MARKET:
+                logger.info("Skipping %s: market exposure $%.0f >= limit $%.0f",
+                            signal.market_name[:40], market_exposure,
+                            self.config.MAX_EXPOSURE_PER_MARKET)
+                continue
+
+            # Check total exposure limits
             current_exposure = sum(
                 p.cost for p in self.paper.positions.values()
             )
@@ -103,6 +122,13 @@ class PolymarketBot:
                 continue
 
             trade_cost = signal.current_price * size
+
+            # Cap trade to not exceed per-market limit
+            remaining_market = self.config.MAX_EXPOSURE_PER_MARKET - market_exposure
+            if trade_cost > remaining_market:
+                trade_cost = remaining_market
+                size = trade_cost / signal.current_price
+
             if not self.risk.check_total_exposure(current_exposure, trade_cost):
                 logger.info("Skipping trade: would exceed exposure limit")
                 continue
@@ -117,7 +143,6 @@ class PolymarketBot:
                     size=size,
                 )
             else:
-                # Live trading
                 try:
                     trade = self.client.place_market_order(
                         signal.token_id, "buy", trade_cost
@@ -155,7 +180,10 @@ class PolymarketBot:
         # Step 6: Daily AI self-analysis (runs once per day)
         if self.daily_analyzer.should_run():
             try:
-                self.daily_analyzer.run_analysis(self)
+                report = self.daily_analyzer.run_analysis(self)
+                if report and report.get("applied_changes"):
+                    logger.info("Gemini auto-applied %d parameter changes",
+                                len(report["applied_changes"]))
             except Exception as e:
                 logger.error("Daily analysis failed: %s", e)
 

@@ -1,5 +1,6 @@
 """Risk management — controls position sizing, exposure limits, and stop-losses."""
 import logging
+import time
 from typing import Optional
 
 from config import Config
@@ -15,6 +16,29 @@ class RiskManager:
         self.config = config or Config()
         # Track peak prices for trailing stop-loss
         self.peak_prices: dict[str, float] = {}
+        # Cooldown: market_name -> cycle_number when cooldown expires
+        self._cooldowns: dict[str, int] = {}
+        self._current_cycle = 0
+
+    def set_cycle(self, cycle: int):
+        """Update current cycle number for cooldown tracking."""
+        self._current_cycle = cycle
+
+    def add_cooldown(self, market_name: str):
+        """Add a cooldown after closing a position at a loss."""
+        expires = self._current_cycle + self.config.LOSS_COOLDOWN_CYCLES
+        self._cooldowns[market_name] = expires
+        logger.info("Cooldown set for '%s' until cycle #%d", market_name[:40], expires)
+
+    def is_on_cooldown(self, market_name: str) -> bool:
+        """Check if a market is on cooldown after a loss."""
+        expires = self._cooldowns.get(market_name)
+        if expires is None:
+            return False
+        if self._current_cycle >= expires:
+            del self._cooldowns[market_name]
+            return False
+        return True
 
     def size_position(self, signal: MarketSignal, balance: float,
                       open_positions: int) -> float:
@@ -24,8 +48,10 @@ class RiskManager:
                         self.config.MAX_OPEN_POSITIONS)
             return 0
 
-        # Kelly criterion: f* = (bp - q) / b
-        if signal.current_price <= 0.02 or signal.current_price >= 0.98:
+        min_price = self.config.MIN_PRICE
+        max_price = self.config.MAX_PRICE
+
+        if signal.current_price <= min_price or signal.current_price >= max_price:
             return 0
 
         b = (1.0 / signal.current_price) - 1  # Odds
@@ -50,6 +76,13 @@ class RiskManager:
         # Cap at max position size
         position_usd = min(position_usd, self.config.MAX_POSITION_SIZE)
 
+        # Scale down for cheap tokens — reduce size linearly below $0.20
+        if signal.current_price < 0.20:
+            cheap_factor = signal.current_price / 0.20  # e.g. $0.05 → 0.25x
+            position_usd *= cheap_factor
+            logger.debug("Cheap token scaling: price=$%.2f factor=%.2f",
+                         signal.current_price, cheap_factor)
+
         # Ensure minimum trade size ($1)
         if position_usd < 1.0:
             return 0
@@ -61,9 +94,18 @@ class RiskManager:
                      signal.market_name[:40], kelly, position_usd, shares)
         return round(shares, 1)
 
+    def check_market_exposure(self, market_name: str,
+                              positions: dict) -> float:
+        """Calculate current USD exposure to a given market question."""
+        exposure = 0.0
+        for pos in positions.values():
+            if pos.market_name == market_name:
+                exposure += pos.cost
+        return exposure
+
     def check_position_stop_loss(self, entry_price: float,
                                  current_price: float) -> bool:
-        """Check if an individual position should be stopped out (15% loss)."""
+        """Check if an individual position should be stopped out."""
         if entry_price == 0:
             return False
         loss_pct = (entry_price - current_price) / entry_price
@@ -86,16 +128,11 @@ class RiskManager:
 
     def check_trailing_stop(self, token_id: str, entry_price: float,
                             current_price: float) -> bool:
-        """Check if trailing stop-loss is triggered.
-
-        Only activates after position gains TRAILING_STOP_ACTIVATION from entry.
-        Then triggers if price drops TRAILING_STOP_DISTANCE from peak.
-        """
+        """Check if trailing stop-loss is triggered."""
         if entry_price == 0:
             return False
 
         gain_from_entry = (current_price - entry_price) / entry_price
-        # Only activate trailing stop after sufficient gain
         if gain_from_entry < self.config.TRAILING_STOP_ACTIVATION:
             return False
 
@@ -123,7 +160,9 @@ class RiskManager:
             return False
         if signal.confidence < 0.1:
             return False
-        if signal.current_price <= 0.02 or signal.current_price >= 0.98:
+        if signal.current_price <= self.config.MIN_PRICE:
+            return False
+        if signal.current_price >= self.config.MAX_PRICE:
             return False
         return True
 
