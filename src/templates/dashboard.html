@@ -19,8 +19,14 @@
       <span id="cycle-counter">Ciclo #0</span>
       <button id="btn-start" class="btn btn-green" onclick="startBot()">Iniciar</button>
       <button id="btn-stop" class="btn btn-red" onclick="stopBot()">Detener</button>
+      <a class="btn btn-ghost" href="/logout">Salir</a>
     </div>
   </header>
+
+  <!-- Crypto spot prices -->
+  <section class="crypto-row" id="crypto-row" hidden>
+    <div class="crypto-strip" id="crypto-strip"></div>
+  </section>
 
   <!-- KPI Cards -->
   <section class="kpi-row">
@@ -123,6 +129,79 @@
         <tbody></tbody>
       </table>
       <p class="empty-msg" id="trade-empty">Sin trades todavia</p>
+    </div>
+  </section>
+
+  <!-- Hermes learning agent -->
+  <section class="full-width-section">
+    <div class="analysis-container">
+      <div class="analysis-header">
+        <h3>
+          Hermes — Agente que Aprende
+          <span id="hermes-status" class="count-badge">off</span>
+        </h3>
+        <button id="btn-reflect" class="btn btn-small" onclick="hermesReflect()">
+          Reflexionar Ahora
+        </button>
+      </div>
+
+      <div class="hermes-stats" id="hermes-stats"></div>
+
+      <p class="hermes-insight" id="hermes-insight" hidden></p>
+
+      <h4 class="sub-heading">
+        Lecciones Aprendidas <span id="lesson-count" class="count-badge">0</span>
+      </h4>
+      <table id="tbl-lessons">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Leccion</th>
+            <th>Condicion</th>
+            <th>Accion</th>
+            <th>Confianza</th>
+            <th>Evidencia</th>
+            <th>Aplicada</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty-msg" id="lessons-empty">
+        Hermes aun no ha aprendido nada. Necesita trades cerrados para reflexionar.
+      </p>
+
+      <h4 class="sub-heading">Rendimiento por Estrategia</h4>
+      <table id="tbl-strategy-stats">
+        <thead>
+          <tr>
+            <th>Estrategia</th>
+            <th>Trades</th>
+            <th>Aciertos</th>
+            <th>Tasa de Acierto</th>
+            <th>PnL Total</th>
+            <th>PnL Medio</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty-msg" id="strategy-empty">Sin datos todavia</p>
+
+      <h4 class="sub-heading">Decisiones Recientes de Hermes</h4>
+      <table id="tbl-verdicts">
+        <thead>
+          <tr>
+            <th>Hora</th>
+            <th>Mercado</th>
+            <th>Estrategia</th>
+            <th>Decision</th>
+            <th>Motivo</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty-msg" id="verdicts-empty">
+        Sin intervenciones. Hermes solo aparece aqui cuando veta o cambia el tamano.
+      </p>
     </div>
   </section>
 

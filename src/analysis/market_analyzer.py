@@ -38,9 +38,12 @@ class MarketSignal:
 class MarketAnalyzer:
     """Scans markets and generates trading signals."""
 
-    def __init__(self, client: PolymarketClient, config: Optional[Config] = None):
+    def __init__(self, client: PolymarketClient, config: Optional[Config] = None,
+                 crypto_strategy=None):
         self.client = client
         self.config = config or Config()
+        # Optional: prices Bitcoin/crypto threshold markets from real spot data
+        self.crypto_strategy = crypto_strategy
 
     @staticmethod
     def _parse_json_field(value, default=None):
@@ -150,10 +153,12 @@ class MarketAnalyzer:
             "data_points": len(prices),
         }
 
-    def detect_mispricing(self, market: dict) -> list[MarketSignal]:
+    def detect_mispricing(self, market: dict,
+                          prices: Optional[dict] = None) -> list[MarketSignal]:
         """Detect mispricings in a binary market (YES/NO should sum to ~1.0)."""
         signals = []
-        prices = self.get_market_prices(market)
+        if prices is None:
+            prices = self.get_market_prices(market)
 
         if len(prices) < 2:
             return signals
@@ -224,9 +229,23 @@ class MarketAnalyzer:
         all_signals = []
 
         for market in markets:
+            # Fetch live prices once and share them across strategies
+            prices = self.get_market_prices(market)
+
             # 1. Check for mispricings
-            mispricing_signals = self.detect_mispricing(market)
-            all_signals.extend(mispricing_signals)
+            all_signals.extend(self.detect_mispricing(market, prices))
+
+            # 1b. Crypto markets get priced from real spot + volatility.
+            #     This is an independent edge that price history cannot see,
+            #     so we skip the trend strategies for these markets.
+            if (self.crypto_strategy
+                    and self.crypto_strategy.is_crypto_market(
+                        market.get("question", ""))):
+                crypto_signals = self.crypto_strategy.generate_signals(
+                    market, prices)
+                all_signals.extend(crypto_signals)
+                if crypto_signals:
+                    continue
 
             # 2. Analyze price trends
             for i, token_id in enumerate(market.get("tokens", [])):

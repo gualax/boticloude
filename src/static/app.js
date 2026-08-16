@@ -62,6 +62,8 @@ const pnlChart = new Chart(document.getElementById("chart-pnl"), {
 async function fetchJSON(url) {
   try {
     const r = await fetch(url);
+    // Session expired — bounce back to the login page
+    if (r.status === 401) { window.location.href = "/login"; return null; }
     if (!r.ok) return null;
     return await r.json();
   } catch { return null; }
@@ -246,6 +248,169 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+// ── Crypto spot prices ───────────────────────────────────────────────
+
+async function updateCrypto() {
+  const data = await fetchJSON("/api/crypto");
+  const row = document.getElementById("crypto-row");
+  if (!data || !data.enabled || !data.assets || Object.keys(data.assets).length === 0) {
+    row.hidden = true;
+    return;
+  }
+  row.hidden = false;
+
+  const strip = document.getElementById("crypto-strip");
+  strip.innerHTML = Object.entries(data.assets).map(([sym, d]) => {
+    const up = d.change_24h >= 0;
+    // The sign glyph carries direction too, so color is never the only cue.
+    const sign = up ? "+" : "";
+    const cls = up ? "pnl-pos" : "pnl-neg";
+    const vol = d.annualized_vol !== null && d.annualized_vol !== undefined
+      ? `vol ${d.annualized_vol}%` : "";
+    return `
+      <div class="crypto-tile">
+        <span class="crypto-symbol">${sym}</span>
+        <span class="crypto-price">$${d.spot.toLocaleString("en-US", {maximumFractionDigits: 2})}</span>
+        <span class="crypto-change ${cls}">${sign}${d.change_24h.toFixed(2)}%</span>
+        <span class="crypto-vol">${vol}</span>
+      </div>`;
+  }).join("");
+}
+
+// ── Hermes ───────────────────────────────────────────────────────────
+
+function conditionChips(when) {
+  return Object.entries(when || {})
+    .map(([k, v]) => `<span class="condition-chip">${k}: ${v}</span>`)
+    .join("");
+}
+
+function confidenceMeter(value) {
+  const pct = Math.round(value * 100);
+  return `<span class="confidence-meter">
+      <span class="confidence-bar"><span class="confidence-fill" style="width:${pct}%"></span></span>
+      <span>${pct}%</span>
+    </span>`;
+}
+
+async function updateHermes() {
+  const d = await fetchJSON("/api/hermes");
+  if (!d || d.error) return;
+
+  const status = document.getElementById("hermes-status");
+  if (!d.enabled)        { status.textContent = "apagado"; }
+  else if (!d.has_brain) { status.textContent = "sin API key"; }
+  else                   { status.textContent = "aprendiendo"; }
+
+  const s = d.summary;
+  document.getElementById("hermes-stats").innerHTML = `
+    <div class="hermes-stat">
+      <div class="hermes-stat-label">Trades Aprendidos</div>
+      <div class="hermes-stat-value">${s.total_trades_learned_from}</div>
+    </div>
+    <div class="hermes-stat">
+      <div class="hermes-stat-label">Tasa de Acierto</div>
+      <div class="hermes-stat-value ${s.win_rate >= 0.5 ? "pnl-pos" : "pnl-neg"}">${(s.win_rate * 100).toFixed(0)}%</div>
+    </div>
+    <div class="hermes-stat">
+      <div class="hermes-stat-label">PnL Acumulado</div>
+      <div class="hermes-stat-value ${pnlClass(s.cumulative_pnl)}">${pnlStr(s.cumulative_pnl)}</div>
+    </div>
+    <div class="hermes-stat">
+      <div class="hermes-stat-label">Lecciones</div>
+      <div class="hermes-stat-value">${s.lessons}</div>
+    </div>
+    <div class="hermes-stat">
+      <div class="hermes-stat-label">Reflexiones</div>
+      <div class="hermes-stat-value">${s.reflections}</div>
+    </div>
+    <div class="hermes-stat">
+      <div class="hermes-stat-label">Proxima en</div>
+      <div class="hermes-stat-value">${d.reflect_due_in} trades</div>
+    </div>`;
+
+  const insight = document.getElementById("hermes-insight");
+  if (d.last_insight) {
+    insight.hidden = false;
+    insight.textContent = d.last_insight;
+  } else {
+    insight.hidden = true;
+  }
+
+  // Lessons
+  const lessonsBody = document.querySelector("#tbl-lessons tbody");
+  document.getElementById("lesson-count").textContent = d.lessons.length;
+  document.getElementById("lessons-empty").style.display =
+    d.lessons.length ? "none" : "block";
+  lessonsBody.innerHTML = d.lessons.map(l => `
+    <tr>
+      <td>${l.id}</td>
+      <td class="lesson-text">${escapeHtml(l.text)}</td>
+      <td>${conditionChips(l.when)}</td>
+      <td><span class="action-badge action-${l.action}">${l.action}</span></td>
+      <td>${confidenceMeter(l.confidence)}</td>
+      <td>${l.evidence_count}</td>
+      <td>${l.times_applied}</td>
+    </tr>`).join("");
+
+  // Strategy stats
+  const stratBody = document.querySelector("#tbl-strategy-stats tbody");
+  const strategies = Object.entries(d.strategy_stats || {});
+  document.getElementById("strategy-empty").style.display =
+    strategies.length ? "none" : "block";
+  stratBody.innerHTML = strategies.map(([name, st]) => `
+    <tr>
+      <td>${name}</td>
+      <td>${st.trades}</td>
+      <td>${st.wins}</td>
+      <td class="${st.win_rate >= 0.5 ? "pnl-pos" : "pnl-neg"}">${(st.win_rate * 100).toFixed(0)}%</td>
+      <td class="${pnlClass(st.pnl)}">${pnlStr(st.pnl)}</td>
+      <td class="${pnlClass(st.avg_pnl)}">${pnlStr(st.avg_pnl)}</td>
+    </tr>`).join("");
+
+  // Recent verdicts
+  const verdictBody = document.querySelector("#tbl-verdicts tbody");
+  const verdicts = d.recent_verdicts || [];
+  document.getElementById("verdicts-empty").style.display =
+    verdicts.length ? "none" : "block";
+  verdictBody.innerHTML = verdicts.map(v => {
+    const label = v.approved
+      ? `<span class="action-badge action-size_down">x${v.multiplier}</span>`
+      : `<span class="action-badge action-avoid">vetado</span>`;
+    return `
+      <tr>
+        <td>${v.time}</td>
+        <td title="${escapeHtml(v.market)}">${escapeHtml(v.market.substring(0, 45))}</td>
+        <td>${v.strategy}</td>
+        <td>${label}</td>
+        <td class="lesson-text">${escapeHtml(v.reason)}</td>
+      </tr>`;
+  }).join("");
+}
+
+async function hermesReflect() {
+  const btn = document.getElementById("btn-reflect");
+  btn.textContent = "Reflexionando...";
+  btn.disabled = true;
+  try {
+    const resp = await fetch("/api/hermes/reflect", { method: "POST" });
+    const data = await resp.json();
+    if (data.error) {
+      alert("Error: " + data.error);
+    } else {
+      await updateHermes();
+      alert(`Hermes reviso ${data.trades_reviewed} trades.\n` +
+            `+${data.added} lecciones, ${data.updated} actualizadas, ` +
+            `${data.removed} descartadas.`);
+    }
+  } catch {
+    alert("Error de conexion");
+  } finally {
+    btn.textContent = "Reflexionar Ahora";
+    btn.disabled = false;
+  }
+}
+
 // ── AI Analysis ──────────────────────────────────────────────────────
 
 function markdownToHtml(md) {
@@ -327,6 +492,8 @@ async function refresh() {
     updateTrades(),
     updateCharts(),
     updateLogs(),
+    updateCrypto(),
+    updateHermes(),
   ]);
   // Load analysis only once (it updates daily, no need to poll)
   if (!_analysisLoaded) updateAnalysis();

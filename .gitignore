@@ -4,8 +4,8 @@ __pycache__/
 *.pyo
 .venv/
 venv/
-data/*.json
-data/*.csv
+data/
+*.log
 *.egg-info/
 dist/
 build/

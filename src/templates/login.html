@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acceso — Polymarket Bot</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <h1 class="login-title">Polymarket Bot</h1>
+    <p class="login-sub">Acceso al panel de control</p>
+
+    {% if error %}
+    <div class="login-error" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="/login" autocomplete="on">
+      <label class="login-label" for="username">Usuario</label>
+      <input class="login-input" type="text" id="username" name="username"
+             autocomplete="username" required autofocus>
+
+      <label class="login-label" for="password">Contrasena</label>
+      <input class="login-input" type="password" id="password" name="password"
+             autocomplete="current-password" required>
+
+      <button class="btn btn-green login-btn" type="submit">Entrar</button>
+    </form>
+  </main>
+</body>
+</html>
