@@ -24,7 +24,6 @@ from src.api.crypto_client import CryptoClient
 from src.api.paper_trader import PaperTrader
 from src.api.polymarket_client import PolymarketClient
 from src.bot import PolymarketBot
-from src.dashboard import print_dashboard
 from src.utils.logger import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -146,6 +145,8 @@ def cmd_hermes(args):
 
 def cmd_status(args):
     """Show current portfolio status."""
+    # Imported here so a missing `rich` only breaks this one command
+    from src.dashboard import print_dashboard
     print_dashboard(PaperTrader(Config.INITIAL_BALANCE), cycle=0)
 
 
