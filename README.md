@@ -161,7 +161,7 @@ Todo vive en `config/settings.py` y puede sobrescribirse desde `.env`.
 | Parametro | Def. | Que controla |
 |---|---|---|
 | `HERMES_ENABLED` | true | Activa el agente |
-| `HERMES_MODEL` | gemini-2.5-pro | Modelo que usa como cerebro |
+| `HERMES_MODEL` | gemini-3.1-pro-preview | Modelo que usa como cerebro |
 | `HERMES_REFLECT_EVERY_N_TRADES` | 10 | Cada cuantos trades reflexiona |
 | `HERMES_MIN_SAMPLE` | 15 | Muestra minima para vetar una estrategia |
 | `HERMES_VETO_WIN_RATE` | 0.30 | Tasa de aciertos por debajo de la cual la apaga |

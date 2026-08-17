@@ -72,6 +72,9 @@ Actions you may use:
   size_up    take it at 1.3x size
   prefer     take it at 1.15x size
 
+Write every "text" field and the "insight" IN SPANISH — they are shown directly
+in the dashboard. Keep each "text" under 140 characters.
+
 Respond with a short paragraph of reasoning IN SPANISH, then exactly one JSON
 block in this format:
 
@@ -319,16 +322,28 @@ class HermesAgent:
         }
 
     def _get_model(self):
+        """Return a callable that takes a prompt and returns text, or None."""
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.config.GEMINI_API_KEY)
-            return genai.GenerativeModel(self.config.HERMES_MODEL)
+            from google import genai
         except ImportError:
-            logger.error("google-generativeai not installed")
+            logger.error("google-genai not installed. Run: pip install google-genai")
             return None
+
+        try:
+            client = genai.Client(api_key=self.config.GEMINI_API_KEY)
         except Exception as e:
             logger.error("Hermes could not reach Gemini: %s", e)
             return None
+
+        model_name = self.config.HERMES_MODEL
+
+        class _Model:
+            @staticmethod
+            def generate_content(prompt: str):
+                return client.models.generate_content(
+                    model=model_name, contents=prompt)
+
+        return _Model()
 
     def _format_lessons(self) -> str:
         if not self.memory.lessons:

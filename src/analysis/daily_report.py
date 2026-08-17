@@ -74,18 +74,28 @@ class DailyAnalyzer:
         self._load_latest_report()
 
     def _get_gemini_model(self):
-        """Initialize Gemini client lazily."""
+        """Return a callable that takes a prompt and returns a response, or None."""
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.config.GEMINI_API_KEY)
-            return genai.GenerativeModel("gemini-2.5-pro")
+            from google import genai
         except ImportError:
-            logger.error("google-generativeai not installed. "
-                         "Run: pip install google-generativeai")
+            logger.error("google-genai not installed. Run: pip install google-genai")
             return None
+
+        try:
+            client = genai.Client(api_key=self.config.GEMINI_API_KEY)
         except Exception as e:
             logger.error("Failed to init Gemini: %s", e)
             return None
+
+        model_name = self.config.HERMES_MODEL
+
+        class _Model:
+            @staticmethod
+            def generate_content(prompt: str):
+                return client.models.generate_content(
+                    model=model_name, contents=prompt)
+
+        return _Model()
 
     def should_run(self) -> bool:
         """Check if it's time for daily analysis."""
@@ -263,9 +273,7 @@ class DailyAnalyzer:
         )
 
         try:
-            response = model.generate_content(
-                [{"role": "user", "parts": [{"text": system + "\n\n" + prompt}]}],
-            )
+            response = model.generate_content(system + "\n\n" + prompt)
             analysis_text = response.text
         except Exception as e:
             logger.error("Gemini API call failed: %s", e)

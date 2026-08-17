@@ -67,7 +67,7 @@ class Config:
 
     # ── Hermes learning agent ───────────────────────────────────────────
     HERMES_ENABLED = os.getenv("HERMES_ENABLED", "true").lower() == "true"
-    HERMES_MODEL = os.getenv("HERMES_MODEL", "gemini-2.5-pro")
+    HERMES_MODEL = os.getenv("HERMES_MODEL", "gemini-3.1-pro-preview")
     HERMES_REFLECT_EVERY_N_TRADES = int(
         os.getenv("HERMES_REFLECT_EVERY_N_TRADES", "10"))
     HERMES_MIN_SAMPLE = 15            # Trades before stats can veto a strategy
