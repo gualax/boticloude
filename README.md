@@ -22,12 +22,16 @@ datos reales, y un agente que aprende de sus propias operaciones.
 ## Instalacion
 
 ```bash
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 
 cp .env.example .env               # y edita .env
 ```
+
+En macOS el comando `python` no existe — usa siempre `python3`. Y `python3 -m
+pip` en lugar de `pip` a secas, para que las dependencias vayan al mismo Python
+que ejecutara el bot.
 
 Para simular no necesitas ninguna clave. Para el panel con contrasena y para
 Hermes si hacen falta un par de valores en `.env` (mas abajo).
@@ -37,13 +41,13 @@ Hermes si hacen falta un par de valores en `.env` (mas abajo).
 ## Uso
 
 ```bash
-python main.py web          # Panel + bot en http://localhost:8080
-python main.py run          # Sin interfaz, corre indefinidamente
-python main.py scan         # Oportunidades detectadas ahora mismo
-python main.py crypto       # Precios BTC/ETH/SOL + comprobacion del modelo
-python main.py hermes       # Que ha aprendido Hermes hasta ahora
-python main.py status       # Estado del portfolio
-python main.py reset        # Borra el estado simulado
+python3 main.py web          # Panel + bot en http://localhost:8080
+python3 main.py run          # Sin interfaz, corre indefinidamente
+python3 main.py scan         # Oportunidades detectadas ahora mismo
+python3 main.py crypto       # Precios BTC/ETH/SOL + comprobacion del modelo
+python3 main.py hermes       # Que ha aprendido Hermes hasta ahora
+python3 main.py status       # Estado del portfolio
+python3 main.py reset        # Borra el estado simulado
 ```
 
 `reset` conserva la memoria de Hermes. Para borrarla tambien: `--include-hermes`.
@@ -68,7 +72,7 @@ Se manejan las dos formas de pregunta:
 Comprueba el modelo con datos en vivo:
 
 ```bash
-python main.py crypto
+python3 main.py crypto
 ```
 
 ---
@@ -129,7 +133,7 @@ SECRET_KEY=<pega aqui la salida del comando de abajo>
 ```
 
 ```bash
-python -c "import secrets; print(secrets.token_hex(32))"
+python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 Con `SECRET_KEY` fija, la sesion sobrevive a los reinicios del bot. Hay bloqueo
@@ -195,7 +199,7 @@ src/
 ## Tests
 
 ```bash
-python -m pytest tests/ -v
+python3 -m pytest tests/ -v
 ```
 
 91 tests cubren el simulador, el modelo de Bitcoin, el aprendizaje de Hermes,
