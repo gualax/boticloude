@@ -101,14 +101,22 @@ class MarketAnalyzer:
                      len(suitable), len(markets))
         return suitable
 
-    def get_market_prices(self, market: dict) -> dict:
-        """Get current prices for all outcomes in a market."""
+    def get_market_prices(self, market: dict,
+                          midpoints: Optional[dict] = None) -> dict:
+        """Get current prices for all outcomes in a market.
+
+        Pass `midpoints` (token_id -> price) from a batch fetch to avoid
+        one API call per token.
+        """
         prices = {}
         tokens = market.get("tokens", [])
         outcomes = market.get("outcomes", ["Yes", "No"])
 
         for i, token_id in enumerate(tokens):
-            mid = self.client.get_midpoint(token_id)
+            if midpoints is not None:
+                mid = midpoints.get(token_id)
+            else:
+                mid = self.client.get_midpoint(token_id)
             if mid is not None:
                 outcome_name = outcomes[i] if i < len(outcomes) else f"Outcome_{i}"
                 prices[outcome_name] = {
@@ -227,10 +235,17 @@ class MarketAnalyzer:
             markets = self.scan_markets()
 
         all_signals = []
+        skipped_history = 0
+
+        # One batched call for every token, instead of one call per token
+        all_tokens = [t for m in markets for t in m.get("tokens", [])]
+        midpoints = self.client.get_midpoints(all_tokens)
+        logger.info("Fetched %d midpoints for %d markets in one batch",
+                    len(midpoints), len(markets))
 
         for market in markets:
             # Fetch live prices once and share them across strategies
-            prices = self.get_market_prices(market)
+            prices = self.get_market_prices(market, midpoints)
 
             # 1. Check for mispricings
             all_signals.extend(self.detect_mispricing(market, prices))
@@ -249,6 +264,15 @@ class MarketAnalyzer:
 
             # 2. Analyze price trends
             for i, token_id in enumerate(market.get("tokens", [])):
+                # Fetching a week of candles costs an API call, so skip
+                # tokens already priced outside the tradeable band — no
+                # signal from them could survive the risk filters anyway.
+                mid = midpoints.get(token_id)
+                if mid is None or not (self.config.MIN_PRICE < mid
+                                       < self.config.MAX_PRICE):
+                    skipped_history += 1
+                    continue
+
                 analysis = self.analyze_price_history(token_id)
                 if analysis["data_points"] < 5:
                     continue
@@ -306,5 +330,6 @@ class MarketAnalyzer:
 
         # Sort by edge * confidence (expected value)
         all_signals.sort(key=lambda s: s.edge * s.confidence, reverse=True)
-        logger.info("Generated %d trading signals", len(all_signals))
+        logger.info("Generated %d trading signals (skipped history for %d "
+                    "out-of-range tokens)", len(all_signals), skipped_history)
         return all_signals

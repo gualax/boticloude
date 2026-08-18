@@ -265,15 +265,23 @@ class PolymarketBot:
 
     def _update_positions(self):
         """Update current prices for all open positions and trailing stops."""
-        for token_id in list(self.paper.positions):
-            try:
-                mid = self.client.get_midpoint(token_id)
-                if mid is not None:
-                    self.paper.update_position_price(token_id, mid)
-                    self.risk.update_trailing_stop(token_id, mid)
-            except Exception as e:
-                logger.warning("Failed to update price for %s: %s",
-                               token_id[:16], e)
+        token_ids = list(self.paper.positions)
+        if not token_ids:
+            return
+        try:
+            midpoints = self.client.get_midpoints(token_ids)
+        except Exception as e:
+            logger.warning("Failed to refresh position prices: %s", e)
+            return
+
+        for token_id, mid in midpoints.items():
+            self.paper.update_position_price(token_id, mid)
+            self.risk.update_trailing_stop(token_id, mid)
+
+        missing = len(token_ids) - len(midpoints)
+        if missing:
+            logger.warning("No price returned for %d of %d open positions",
+                           missing, len(token_ids))
 
     def _print_final_report(self):
         """Print a final performance report."""
