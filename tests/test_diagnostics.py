@@ -1,5 +1,6 @@
 """Tests for the trading-funnel diagnostic."""
 from dataclasses import dataclass
+from unittest.mock import Mock
 
 import pytest
 
@@ -87,8 +88,8 @@ class TestDiagnose:
 
     def test_result_shape_is_stable_at_every_stage(self):
         """Callers must get the same keys no matter where the walk ends."""
-        expected = {"error", "markets_raw", "markets_suitable", "signals",
-                    "passed_risk", "approved_hermes", "tradeable"}
+        expected = {"error", "cause", "markets_raw", "markets_suitable",
+                    "signals", "passed_risk", "approved_hermes", "tradeable"}
         cases = [
             FakeBot(raw=0),                      # stops at connection
             FakeBot(markets=[]),                 # stops at market filter
@@ -143,6 +144,57 @@ class TestDiagnose:
         assert result["passed_risk"] == 1
         assert result["approved_hermes"] == 0
         assert "L1" in capsys.readouterr().out
+
+
+class TestConnectionDiagnosis:
+    """A network failure should name its cause, not shrug."""
+
+    def test_identifies_tls_interception(self):
+        import ssl
+        from src.diagnostics import explain_connection_error
+        error = Exception(
+            "certificate verify failed: Hostname mismatch, certificate is "
+            "not valid for 'gamma-api.polymarket.com'")
+        cause, advice = explain_connection_error(error)
+        assert "interceptado" in cause.lower()
+        joined = " ".join(advice)
+        assert "antivirus" in joined.lower() or "corporativo" in joined.lower()
+        # Must never advise turning verification off
+        assert "NO desactives" in joined
+
+    def test_identifies_connection_reset(self):
+        from src.diagnostics import explain_connection_error
+        cause, advice = explain_connection_error(
+            Exception("('Connection aborted.', ConnectionResetError(54, "
+                      "'Connection reset by peer'))"))
+        assert "cortada" in cause.lower()
+        assert any("region" in line.lower() for line in advice)
+
+    def test_identifies_timeout(self):
+        from src.diagnostics import explain_connection_error
+        cause, _ = explain_connection_error(Exception("Read timed out"))
+        assert "tiempo" in cause.lower()
+
+    def test_identifies_dns_failure(self):
+        from src.diagnostics import explain_connection_error
+        cause, _ = explain_connection_error(
+            Exception("Name or service not known"))
+        assert "dominio" in cause.lower()
+
+    def test_falls_back_for_unknown_errors(self):
+        from src.diagnostics import explain_connection_error
+        cause, advice = explain_connection_error(Exception("something odd"))
+        assert cause and advice
+
+    def test_diagnose_reports_the_named_cause(self, capsys):
+        import requests
+        bot = FakeBot()
+        bot.client = FakeClient(fail=True)
+        bot.client.get_markets = Mock(side_effect=requests.exceptions.SSLError(
+            "certificate verify failed: Hostname mismatch"))
+        result = diagnose(bot)
+        assert "interceptado" in result["cause"].lower()
+        assert "Causa:" in capsys.readouterr().out
 
 
 class TestRejectionReasons:

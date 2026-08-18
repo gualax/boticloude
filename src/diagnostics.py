@@ -15,6 +15,83 @@ def _heading(text: str):
     print(f"\n{text}\n{LINE}")
 
 
+def explain_connection_error(error: Exception) -> tuple[str, list[str]]:
+    """Turn a network failure into a named cause and concrete next steps.
+
+    The generic advice ("check your connection") is useless when the error
+    already says precisely what went wrong.
+    """
+    text = str(error).lower()
+
+    if "hostname mismatch" in text or "certificate verify failed" in text:
+        return (
+            "TLS interceptado — el certificado no es de Polymarket",
+            [
+                "Algo en tu red esta descifrando el trafico HTTPS y presentando",
+                "su propio certificado. Casi siempre es una de estas tres:",
+                "",
+                "  - Cortafuegos corporativo con inspeccion SSL",
+                "  - Antivirus con escaneo HTTPS (Kaspersky, ESET, Avast...)",
+                "  - Un portal cautivo de wifi publico sin aceptar todavia",
+                "",
+                "Para confirmar quien intercepta, mira quien firma el certificado:",
+                "  openssl s_client -connect gamma-api.polymarket.com:443 \\",
+                "      -servername gamma-api.polymarket.com </dev/null 2>/dev/null \\",
+                "      | openssl x509 -noout -issuer -subject",
+                "",
+                "Si el emisor es tu empresa o tu antivirus, ahi tienes la causa.",
+                "Prueba desde otra red (el movil compartiendo datos sirve).",
+                "",
+                "NO desactives la verificacion de certificados: dejaria el trafico",
+                "expuesto y no arregla el bloqueo de fondo.",
+            ],
+        )
+
+    if "reset by peer" in text or "connection aborted" in text:
+        return (
+            "Conexion cortada por el servidor",
+            [
+                "Polymarket esta cerrando la conexion. Causas habituales:",
+                "",
+                "  - Tu IP quedo limitada por exceso de peticiones (puede tardar",
+                "    horas en soltarse aunque el bot ya se porte bien)",
+                "  - Bloqueo por region: Polymarket restringe algunas jurisdicciones",
+                "  - Un cortafuegos corta el dominio",
+                "",
+                "Prueba desde otra red para distinguir entre las tres.",
+            ],
+        )
+
+    if "timed out" in text or "timeout" in text:
+        return (
+            "Sin respuesta a tiempo",
+            [
+                "El servidor no contesto. Puede ser una caida temporal de",
+                "Polymarket o una conexion muy lenta. Reintenta en unos minutos.",
+            ],
+        )
+
+    if "name or service not known" in text or "nodename nor servname" in text:
+        return (
+            "El dominio no resuelve",
+            [
+                "El DNS no encuentra el servidor. Revisa tu conexion, o si un",
+                "DNS filtrado esta bloqueando el dominio.",
+            ],
+        )
+
+    if "proxy" in text or "403" in text or "forbidden" in text:
+        return (
+            "Acceso denegado por un intermediario",
+            [
+                "Un proxy o el propio Polymarket rechazo la peticion.",
+                "Si estas en una red corporativa o con VPN, prueba sin ella.",
+            ],
+        )
+
+    return ("Fallo de red", ["Revisa tu conexion, VPN o cortafuegos."])
+
+
 def diagnose(bot, limit: int = 100, show: int = 12) -> dict:
     """Walk one full cycle's decision path and print where signals are lost.
 
@@ -25,6 +102,7 @@ def diagnose(bot, limit: int = 100, show: int = 12) -> dict:
     # Every stage stays present even when an earlier one ends the walk
     summary = {
         "error": None,
+        "cause": None,
         "markets_raw": 0,
         "markets_suitable": 0,
         "signals": 0,
@@ -39,10 +117,16 @@ def diagnose(bot, limit: int = 100, show: int = 12) -> dict:
         summary["markets_raw"] = len(raw)
         print(f"   Mercados devueltos por la API : {len(raw)}")
     except Exception as e:
-        print(f"   NO SE PUDO CONECTAR: {e}")
-        print("\n   Sin acceso a la API de Polymarket el bot no puede operar.")
-        print("   Comprueba tu conexion, VPN o cortafuegos.")
+        cause, advice = explain_connection_error(e)
+        print(f"   NO SE PUDO CONECTAR\n")
+        print(f"   Causa: {cause}\n")
+        for line in advice:
+            print(f"   {line}" if line else "")
+        print(f"\n   Error original:\n   {e}")
+        print("\n   Sin acceso a la API de Polymarket el bot no puede operar,")
+        print("   y esto no se arregla desde el codigo del bot.")
         summary["error"] = str(e)
+        summary["cause"] = cause
         return summary
 
     if not raw:
