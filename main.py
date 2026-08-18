@@ -108,6 +108,16 @@ def cmd_crypto(args):
                   f"{model['fair_probability']:.1%}")
 
 
+def cmd_diagnose(args):
+    """Explain exactly why the bot is or is not trading right now."""
+    from src.diagnostics import diagnose
+    # Quiet the per-request logging so the funnel reads cleanly
+    logging.getLogger("src.api.polymarket_client").setLevel(logging.ERROR)
+    logging.getLogger("src.analysis.market_analyzer").setLevel(logging.ERROR)
+    print("Diagnostico del bot — analizando el estado actual...")
+    diagnose(PolymarketBot(Config()), limit=args.limit)
+
+
 def cmd_hermes(args):
     """Show what Hermes has learned."""
     from src.agents.hermes import HermesAgent
@@ -188,6 +198,11 @@ def main():
     scan_parser.add_argument("--limit", type=int, default=100,
                              help="Number of markets to scan")
 
+    diag_parser = sub.add_parser(
+        "diagnose", help="Explain why the bot is or is not trading")
+    diag_parser.add_argument("--limit", type=int, default=100,
+                             help="Number of markets to scan")
+
     sub.add_parser("crypto", help="Live crypto prices and model check")
     sub.add_parser("hermes", help="Show what Hermes has learned")
     sub.add_parser("status", help="Show portfolio status")
@@ -205,6 +220,7 @@ def main():
         "run": cmd_run,
         "web": cmd_web,
         "scan": cmd_scan,
+        "diagnose": cmd_diagnose,
         "crypto": cmd_crypto,
         "hermes": cmd_hermes,
         "status": cmd_status,

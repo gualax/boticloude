@@ -152,19 +152,27 @@ class RiskManager:
         """Remove trailing stop data when position is closed."""
         self.peak_prices.pop(token_id, None)
 
+    def rejection_reason(self, signal: MarketSignal) -> Optional[str]:
+        """Why this signal would be skipped, or None if it passes."""
+        if signal.edge < self.config.MIN_EDGE:
+            return (f"edge {signal.edge * 100:.1f}% < minimo "
+                    f"{self.config.MIN_EDGE * 100:.0f}%")
+        if signal.liquidity < self.config.MIN_LIQUIDITY:
+            return (f"liquidez ${signal.liquidity:.0f} < minimo "
+                    f"${self.config.MIN_LIQUIDITY:.0f}")
+        if signal.confidence < 0.1:
+            return f"confianza {signal.confidence:.0%} < 10%"
+        if signal.current_price <= self.config.MIN_PRICE:
+            return (f"precio ${signal.current_price:.3f} <= minimo "
+                    f"${self.config.MIN_PRICE:.2f}")
+        if signal.current_price >= self.config.MAX_PRICE:
+            return (f"precio ${signal.current_price:.3f} >= maximo "
+                    f"${self.config.MAX_PRICE:.2f}")
+        return None
+
     def validate_signal(self, signal: MarketSignal) -> bool:
         """Validate that a signal meets minimum quality criteria."""
-        if signal.edge < self.config.MIN_EDGE:
-            return False
-        if signal.liquidity < self.config.MIN_LIQUIDITY:
-            return False
-        if signal.confidence < 0.1:
-            return False
-        if signal.current_price <= self.config.MIN_PRICE:
-            return False
-        if signal.current_price >= self.config.MAX_PRICE:
-            return False
-        return True
+        return self.rejection_reason(signal) is None
 
     def check_total_exposure(self, current_exposure: float,
                              new_trade_cost: float) -> bool:
