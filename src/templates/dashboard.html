@@ -16,12 +16,15 @@
       <span id="status-badge" class="badge badge-off">OFF</span>
     </div>
     <div class="header-right">
+      <span id="activity" class="activity"></span>
       <span id="cycle-counter">Ciclo #0</span>
       <button id="btn-start" class="btn btn-green" onclick="startBot()">Iniciar</button>
       <button id="btn-stop" class="btn btn-red" onclick="stopBot()">Detener</button>
       <a class="btn btn-ghost" href="/logout">Salir</a>
     </div>
   </header>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <!-- Crypto spot prices -->
   <section class="crypto-row" id="crypto-row" hidden>

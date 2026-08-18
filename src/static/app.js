@@ -110,6 +110,28 @@ async function updateSummary() {
   if (d.is_running) { sb.textContent = "ON"; sb.className = "badge badge-on"; }
   else              { sb.textContent = "OFF"; sb.className = "badge badge-off"; }
 
+  // Activity — the bot sleeps between cycles, so say so explicitly
+  const act = document.getElementById("activity");
+  let label, cls;
+  if (!d.is_running || d.phase === "stopped") {
+    label = "detenido";
+    cls = "activity-stopped";
+  } else if (d.phase === "scanning") {
+    const secs = d.seconds_in_phase;
+    label = "analizando mercados" + (secs != null ? ` (${secs}s)` : "");
+    cls = "activity-working";
+  } else {
+    const secs = d.seconds_to_next_cycle;
+    label = secs != null ? `proximo ciclo en ${secs}s` : "en espera";
+    cls = "activity-waiting";
+  }
+  act.className = "activity " + cls;
+  act.innerHTML = `<span class="activity-dot"></span>${label}`;
+
+  // Only offer the action that actually does something
+  document.getElementById("btn-start").disabled = d.is_running;
+  document.getElementById("btn-stop").disabled = !d.is_running;
+
   // Mode badge
   const mb = document.getElementById("mode-badge");
   if (d.mode === "LIVE") { mb.textContent = "LIVE"; mb.className = "badge badge-live"; }
@@ -474,12 +496,44 @@ async function runAnalysis() {
 
 // ── Bot controls ────────────────────────────────────────────────────
 
+let _toastTimer = null;
+
+function toast(message, kind = "") {
+  const el = document.getElementById("toast");
+  el.textContent = message;
+  el.className = "toast" + (kind ? " toast-" + kind : "");
+  el.hidden = false;
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.hidden = true; }, 4000);
+}
+
+async function postAction(url, button, busyLabel) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = busyLabel;
+  try {
+    const resp = await fetch(url, { method: "POST" });
+    const data = await resp.json();
+    const kind = data.status === "started" || data.status === "stopped"
+      ? "ok" : "warn";
+    toast(data.message || data.status, kind);
+    await refresh();
+  } catch {
+    toast("No se pudo contactar con el bot", "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 async function startBot() {
-  await fetch("/api/bot/start", { method: "POST" });
+  await postAction("/api/bot/start", document.getElementById("btn-start"),
+                   "Arrancando...");
 }
 
 async function stopBot() {
-  await fetch("/api/bot/stop", { method: "POST" });
+  await postAction("/api/bot/stop", document.getElementById("btn-stop"),
+                   "Deteniendo...");
 }
 
 // ── Main loop ───────────────────────────────────────────────────────

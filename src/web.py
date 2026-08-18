@@ -41,6 +41,9 @@ _last_signals: list[dict] = []
 _cycle_history: list[dict] = []
 _crypto_snapshot: dict = {}
 
+# What the bot is doing right now, so the UI never looks frozen
+_activity: dict = {"phase": "stopped", "since": None, "next_cycle": None}
+
 MAX_LOG_ENTRIES = 200
 
 
@@ -109,14 +112,13 @@ def _run_bot_loop():
     global _last_signals, _crypto_snapshot
     while _bot and _bot.is_running:
         try:
+            _activity.update(phase="scanning", since=time.time(), next_cycle=None)
             result = _bot.run_cycle()
 
-            try:
-                markets = _bot.analyzer.scan_markets(limit=50)
-                signals = _bot.analyzer.generate_signals(markets)
-                _last_signals = [_serialize_signal(s) for s in signals[:20]]
-            except Exception:
-                pass
+            # run_cycle already scanned; reuse its signals instead of
+            # hitting the API a second time for the same data
+            _last_signals = [_serialize_signal(s)
+                             for s in result.get("signals", [])[:20]]
 
             if _bot.crypto:
                 try:
@@ -143,7 +145,16 @@ def _run_bot_loop():
         except Exception as e:
             logger.error("Bot cycle error: %s", e)
 
-        time.sleep(_bot.config.REBALANCE_INTERVAL)
+        interval = _bot.config.REBALANCE_INTERVAL
+        _activity.update(phase="sleeping", since=time.time(),
+                         next_cycle=time.time() + interval)
+        # Wake promptly when stopped instead of finishing the whole sleep
+        for _ in range(interval):
+            if not (_bot and _bot.is_running):
+                break
+            time.sleep(1)
+
+    _activity.update(phase="stopped", since=time.time(), next_cycle=None)
 
 
 def _start_bot() -> bool:
@@ -218,6 +229,16 @@ def api_summary():
     summary["mode"] = "PAPER" if _bot.config.PAPER_TRADING else "LIVE"
     summary["initial_balance"] = _bot.paper.initial_balance
     summary["version"] = _bot.config.VERSION
+
+    # Live activity so the dashboard can show progress between cycles
+    phase = _activity["phase"] if _bot.is_running else "stopped"
+    summary["phase"] = phase
+    summary["cycle_interval"] = _bot.config.REBALANCE_INTERVAL
+    next_cycle = _activity.get("next_cycle")
+    summary["seconds_to_next_cycle"] = (
+        max(0, int(next_cycle - time.time())) if next_cycle else None)
+    since = _activity.get("since")
+    summary["seconds_in_phase"] = int(time.time() - since) if since else None
     return jsonify(summary)
 
 
@@ -262,16 +283,22 @@ def api_logs():
 @app.route("/api/bot/start", methods=["POST"])
 @guard
 def api_bot_start():
-    started = _start_bot()
-    return jsonify({"status": "started" if started else "already_running"})
+    if _start_bot():
+        return jsonify({"status": "started",
+                        "message": "Bot arrancado. Primer ciclo en curso."})
+    return jsonify({"status": "already_running",
+                    "message": "El bot ya estaba corriendo."})
 
 
 @app.route("/api/bot/stop", methods=["POST"])
 @guard
 def api_bot_stop():
-    if _bot:
-        _bot.is_running = False
-    return jsonify({"status": "stopped"})
+    if not _bot or not _bot.is_running:
+        return jsonify({"status": "already_stopped",
+                        "message": "El bot ya estaba parado."})
+    _bot.is_running = False
+    return jsonify({"status": "stopped",
+                    "message": "Bot detenido. Las posiciones abiertas se mantienen."})
 
 
 # ── Crypto / Bitcoin ─────────────────────────────────────────────────────

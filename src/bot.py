@@ -51,6 +51,7 @@ class PolymarketBot:
         result = {
             "cycle": self.cycle_count,
             "signals_found": 0,
+            "signals": [],
             "trades_executed": 0,
             "positions_closed": 0,
             "hermes_vetoes": 0,
@@ -65,6 +66,8 @@ class PolymarketBot:
             markets = self.analyzer.scan_markets(limit=100)
             signals = self.analyzer.generate_signals(markets)
             result["signals_found"] = len(signals)
+            # Handed back so callers (the dashboard) need not scan again
+            result["signals"] = signals
         except Exception as e:
             logger.error("Error scanning markets: %s", e)
             result["errors"].append(str(e))

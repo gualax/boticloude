@@ -277,6 +277,58 @@ tbody tr:hover { background: rgba(255,255,255,0.03); }
   font-size: 0.75rem;
 }
 
+/* ── Activity indicator ─────────────────────────────────── */
+/* The bot sleeps between cycles, so without this the page reads as dead. */
+.activity {
+  font-size: 0.78rem;
+  color: var(--dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.activity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dim);
+  flex-shrink: 0;
+}
+.activity-working .activity-dot {
+  background: var(--green);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.activity-waiting .activity-dot { background: var(--blue); }
+.activity-stopped .activity-dot { background: var(--dim); }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-working .activity-dot { animation: none; }
+}
+
+/* ── Toast ──────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  top: 62px;
+  right: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--blue);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  font-size: 0.82rem;
+  z-index: 50;
+  max-width: 320px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+.toast-ok    { border-left-color: var(--green); }
+.toast-warn  { border-left-color: var(--yellow); }
+.toast-error { border-left-color: var(--red); }
+
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* ── Crypto stat tiles ──────────────────────────────────── */
 /* A single headline number per asset — a plot would add nothing here. */
 .crypto-row { margin-bottom: 20px; }
