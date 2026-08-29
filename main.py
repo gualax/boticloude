@@ -37,16 +37,22 @@ def cmd_run(args):
 
 def cmd_web(args):
     """Launch the web dashboard."""
-    from src.web import start_web
+    from src.web import InsecureExposureError, start_web
     config = Config()
-    print(f"Dashboard: http://localhost:{args.port}")
+
+    shown_host = "localhost" if args.host in ("127.0.0.1", "localhost") else args.host
+    print(f"Dashboard: http://{shown_host}:{args.port}")
     if config.DASHBOARD_PASSWORD:
         print(f"Login as '{config.DASHBOARD_USER}' with your DASHBOARD_PASSWORD.")
     else:
-        print("No DASHBOARD_PASSWORD set — the dashboard is open to anyone "
-              "who can reach this port.")
+        print("Sin DASHBOARD_PASSWORD — solo accesible desde esta maquina.")
     print()
-    start_web(port=args.port, auto_start_bot=True)
+
+    try:
+        start_web(host=args.host, port=args.port, auto_start_bot=True)
+    except InsecureExposureError as e:
+        print(f"\n{e}\n")
+        raise SystemExit(1)
 
 
 def cmd_scan(args):
@@ -193,6 +199,10 @@ def main():
     web_parser = sub.add_parser("web", help="Launch web dashboard")
     web_parser.add_argument("--port", type=int, default=8080,
                             help="Port for the web server (default: 8080)")
+    web_parser.add_argument("--host", default="127.0.0.1",
+                            help="Interface to bind (default: 127.0.0.1). "
+                                 "Use 0.0.0.0 to expose to the network — "
+                                 "requires DASHBOARD_PASSWORD.")
 
     scan_parser = sub.add_parser("scan", help="Scan for opportunities")
     scan_parser.add_argument("--limit", type=int, default=100,

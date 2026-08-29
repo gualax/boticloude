@@ -388,9 +388,49 @@ def api_analysis_run():
 
 # ── Entry point ──────────────────────────────────────────────────────────
 
-def start_web(host: str = "0.0.0.0", port: int = 8080,
-              auto_start_bot: bool = True):
-    """Start the web dashboard and optionally launch the bot."""
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+class InsecureExposureError(RuntimeError):
+    """Raised rather than serving an unauthenticated dashboard publicly."""
+
+
+def check_exposure_is_safe(config, host: str):
+    """Refuse to serve the control panel to a network without a password.
+
+    The dashboard starts and stops the bot and shows the whole portfolio,
+    so binding it to a public interface with no login would hand control
+    to anyone who port-scans the machine.
+    """
+    if host in LOCAL_HOSTS or auth_enabled(config):
+        return
+    raise InsecureExposureError(
+        f"Negandome a servir en {host} sin contrasena.\n\n"
+        "El panel arranca y detiene el bot y muestra toda la cartera, "
+        "asi que exponerlo sin login\nse la entrega a cualquiera que "
+        "escanee la maquina.\n\n"
+        "Pon DASHBOARD_PASSWORD en .env, o usa --host 127.0.0.1 para "
+        "servir solo en local\n(y llega por un tunel SSH)."
+    )
+
+
+def require_password_for_production(config):
+    """Serving under gunicorn always means serving a network.
+
+    Nobody reaches for a production WSGI server to talk to their own
+    loopback, so an empty password here is always a mistake.
+    """
+    if not config.DASHBOARD_PASSWORD:
+        raise InsecureExposureError(
+            "DASHBOARD_PASSWORD esta vacia.\n"
+            "Bajo gunicorn el panel se sirve a la red, y sin contrasena "
+            "quedaria abierto a cualquiera.\n"
+            "Ponla en .env antes de arrancar."
+        )
+
+
+def prepare(auto_start_bot: bool = True):
+    """Wire up logging and launch the bot. Shared by dev and production."""
     config = get_config()
 
     web_handler = WebLogHandler()
@@ -400,13 +440,25 @@ def start_web(host: str = "0.0.0.0", port: int = 8080,
     if auth_enabled(config):
         logger.info("Dashboard auth ENABLED for user '%s'", config.DASHBOARD_USER)
     else:
-        logger.warning(
-            "Dashboard auth DISABLED — set DASHBOARD_PASSWORD in .env "
-            "before exposing this port to a network")
+        logger.warning("Dashboard auth DISABLED — solo seguro en localhost")
 
     if auto_start_bot:
         _start_bot()
         logger.info("Bot started in background thread")
+
+
+def start_web(host: str = "127.0.0.1", port: int = 8080,
+              auto_start_bot: bool = True):
+    """Start the development server. Production runs under gunicorn."""
+    config = get_config()
+    check_exposure_is_safe(config, host)
+
+    prepare(auto_start_bot=auto_start_bot)
+
+    if host not in LOCAL_HOSTS:
+        logger.warning(
+            "Servidor de desarrollo expuesto en %s. Para uso permanente "
+            "usa gunicorn (ver README).", host)
 
     logger.info("Dashboard available at http://%s:%d", host, port)
     app.run(host=host, port=port, debug=False, use_reloader=False)

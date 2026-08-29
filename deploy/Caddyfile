@@ -1,0 +1,31 @@
+# Reverse proxy giving the dashboard real HTTPS.
+#
+# DOMAIN is set by deploy/setup.sh. With no domain of your own it uses
+# <your-ip>.sslip.io — a public DNS service that resolves any embedded IP
+# back to itself, which is enough for Let's Encrypt to issue a genuine
+# certificate. No purchase, no warning page.
+#
+# Replace the line below with your own hostname if you have one.
+
+{$DOMAIN} {
+    encode gzip
+
+    # The bot listens only on loopback; Caddy is the only way in.
+    reverse_proxy 127.0.0.1:8080 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Real-IP {remote_host}
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    log {
+        output file /var/log/caddy/boticloude.log
+        format console
+    }
+}

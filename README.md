@@ -52,7 +52,7 @@ Hermes si hacen falta un par de valores en `.env` (mas abajo).
 ## Uso
 
 ```bash
-python main.py web          # Panel + bot en http://localhost:8080
+python main.py web          # Panel local en http://localhost:8080
 python main.py run          # Sin interfaz, corre indefinidamente
 python main.py scan         # Oportunidades detectadas ahora mismo
 python main.py crypto       # Precios BTC/ETH/SOL + comprobacion del modelo
@@ -149,6 +149,94 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 Con `SECRET_KEY` fija, la sesion sobrevive a los reinicios del bot. Hay bloqueo
 temporal de 5 minutos tras 5 intentos fallidos desde la misma IP.
+
+---
+
+## Desplegar en un servidor
+
+Correrlo en un VPS resuelve dos cosas: el bot opera 24/7 sin depender de tu
+portatil, y sale por una IP limpia (las redes corporativas suelen interceptar
+o bloquear Polymarket).
+
+En un Ubuntu/Debian recien creado:
+
+```bash
+git clone https://github.com/gualax/boticloude
+cd boticloude
+sudo bash deploy/setup.sh
+```
+
+Te pide la contrasena del panel y la clave de Gemini, y deja montado:
+
+- **gunicorn** sirviendo la app (el servidor de Flask es solo para desarrollo)
+- **systemd** para que arranque sola y sobreviva a reinicios
+- **Caddy** con HTTPS automatico
+- **ufw** con solo 80 y 443 abiertos — el puerto 8080 queda cerrado, gunicorn
+  escucha unicamente en loopback
+
+Al terminar te da la direccion: `https://<tu-ip>.sslip.io`
+
+### HTTPS sin comprar dominio
+
+`sslip.io` resuelve cualquier IP incrustada en el nombre a esa misma IP, asi
+que `203.0.113.9.sslip.io` apunta a `203.0.113.9`. Eso basta para que Let's
+Encrypt valide y emita un certificado de verdad. Sin dominio propio, sin
+avisos del navegador.
+
+Esto importa: por HTTP plano tu contrasena viaja legible para cualquiera en
+el camino. Si tienes dominio propio, pasalo con `DOMAIN=panel.tudominio.com
+sudo bash deploy/setup.sh`.
+
+### Manejo diario
+
+```bash
+systemctl status boticloude      # como va
+journalctl -u boticloude -f      # logs en vivo
+systemctl restart boticloude     # reiniciar
+```
+
+Para actualizar:
+
+```bash
+cd /opt/boticloude
+sudo -u boticloude git pull
+sudo -u boticloude ./venv/bin/pip install -r requirements.txt
+sudo systemctl restart boticloude
+```
+
+### Un solo worker, siempre
+
+El servicio arranca gunicorn con `--workers 1`. No es un detalle menor: cada
+worker es un proceso aparte con su propio bot, sus propias posiciones y sus
+propias escrituras a `data/paper_state.json`. Dos operarian por duplicado y se
+corromperian el estado. La concurrencia sale de los hilos (`--threads 4`).
+
+### Si prefieres no exponer nada
+
+La alternativa mas segura es no abrir el panel a internet y llegar por un
+tunel SSH:
+
+```bash
+# en el servidor: deja gunicorn en loopback (ya lo esta)
+# desde tu maquina:
+ssh -L 8080:127.0.0.1:8080 usuario@tu-ip
+```
+
+Y abre `http://localhost:8080`. Nada queda expuesto.
+
+### Proteccion contra exposicion accidental
+
+El bot **se niega a arrancar** si lo apuntas a una interfaz publica sin
+contrasena:
+
+```
+Negandome a servir en 0.0.0.0 sin contrasena.
+```
+
+El panel arranca y detiene el bot y ensena toda la cartera, asi que servirlo
+sin login se lo entrega a quien escanee la maquina. Con `--host 127.0.0.1`
+(por defecto) no hace falta contrasena, porque solo llega desde el propio
+equipo.
 
 ---
 

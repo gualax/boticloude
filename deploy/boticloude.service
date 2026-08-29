@@ -1,0 +1,48 @@
+[Unit]
+Description=Polymarket trading bot dashboard
+Documentation=https://github.com/gualax/boticloude
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=boticloude
+Group=boticloude
+WorkingDirectory=/opt/boticloude
+EnvironmentFile=/opt/boticloude/.env
+
+# One worker only: each worker is a separate process with its own bot and
+# its own writes to data/paper_state.json. Two would trade twice over and
+# clobber each other. Concurrency comes from threads.
+ExecStart=/opt/boticloude/venv/bin/gunicorn \
+    --workers 1 \
+    --threads 4 \
+    --bind 127.0.0.1:8080 \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --access-logfile - \
+    --error-logfile - \
+    wsgi:app
+
+Restart=always
+RestartSec=10
+KillSignal=SIGTERM
+
+# The bot only needs its own directory and outbound HTTPS
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/boticloude/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=boticloude
+
+[Install]
+WantedBy=multi-user.target
